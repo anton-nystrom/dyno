@@ -3,13 +3,38 @@ import type { NextPage } from 'next'
 import Head from 'next/head'
 import styles from '../styles/Home.module.css'
 import CSVReader from 'react-csv-reader'
+import { Line } from 'react-chartjs-2'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
 
 //Komplett = (mass * ((v1 - v0) / time) + (0.5p * (v * v) * Cd * A)) * radius / final gear ratio
 
 const Home: NextPage = () => {
 
+  ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    Title,
+    Tooltip,
+    Legend
+  );
+
   const [data, setData] = useState<any[]>([]);
+  const [dyno, setDyno] = useState<any[]>([]);
   const graph: object[] = [];
+  let torqueTable: number[] = [];
+  let rpmTable1: number[] = [];
+  const [rpmTable, setRpmTable] = useState<any[]>([]);
 
   let config = {
     mass : 1391,
@@ -19,7 +44,8 @@ const Home: NextPage = () => {
     airDensity : 1.269,
     wheelRadius : 0.302,
     frontalArea : 1.82,
-    dragCoefficient : 0.34
+    dragCoefficient : 0.34,
+    smoothing : 4,
   };
 
   if(config.gearRatio && config.finalDrive) {
@@ -40,40 +66,32 @@ const Home: NextPage = () => {
 
     const torque = (config.mass * ((v1 - v0) / time) + (0.5 * config.airDensity * (v * v) * config.dragCoefficient * config.frontalArea)) * config.wheelRadius / config.finalGearRatio
     const horsepower = torque * current.rpm / 7127;
+
+    torqueTable.push(torque);
+    rpmTable1.push(current.rpm);
     
     return {
       rpm : current.rpm,
+      time : current.time,
       torque : torque,
       horsepower : horsepower
     };
   }
 
-  const table = {
-    prev : {
-      rpm : 3936,
-      time : 28.213
-    },
-    current : {
-      rpm : 4045,
-      time : 28.494
-    },
-    next : {
-      rpm : 4141,
-      time : 28.730
-    }
-  };
-
-  if(data.length > 0) {
+  function populate(data: any[]) {
     console.log(data);
-    for (let i = 0; i < data.length; i++) {
-      let prev = data[i - 1];
+    for (let i = 0; i < data.length; i += config.smoothing) {
+      let prev = data[i - config.smoothing];
       let current = data[i];
-      let next = data[i + 1];
+      let next = data[i + config.smoothing];
       
-      if(i === 0) {
+      if(i < config.smoothing) {
         prev = current;
       }
-      else if(i === data.length - 1) {
+      else if(i >= data.length - config.smoothing - 1) {
+        next = current;
+      }
+      else if (next.rpm < current.rpm) {
         next = current;
       }
 
@@ -81,8 +99,37 @@ const Home: NextPage = () => {
 
     }
     console.log(graph);
-    
+    setDyno(graph);
+    setRpmTable(rpmTable1);
   }
+
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+      },
+      title: {
+        display: true,
+        text: 'Virtual Dyno',
+      },
+    },
+  };
+
+  const chartLabels = [2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500];
+
+  const chartData = {
+    labels: rpmTable,
+    datasets: [
+      {
+        label: 'Torque',
+        data: torqueTable,
+        borderColor: 'rgb(255, 99, 132)',
+        backgroundColor: 'rgba(255, 99, 132, 0.5)',
+      },
+    ],
+  };
+
 
   const papaparseOptions = {
     header: true,
@@ -96,10 +143,14 @@ const Home: NextPage = () => {
       <Head>
         <title>Virtual Dyno</title>
       </Head>
+      {dyno.length > 0 &&
+        <Line options={chartOptions} data={chartData} />
+      }
       <CSVReader 
-        onFileLoaded={(data) => setData(data)}
+        onFileLoaded={(data) => populate(data)}
         parserOptions={papaparseOptions}
         />
+      
     </div>
   )
 }
