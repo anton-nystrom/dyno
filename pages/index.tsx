@@ -4,12 +4,12 @@ import Head from 'next/head'
 import styles from '../styles/Home.module.css'
 import CSVReader from 'react-csv-reader'
 import dynamic from 'next/dynamic';
+import * as ReactDOMClient from 'react-dom/client'
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
 //Komplett = (mass * ((v1 - v0) / time) + (0.5p * (v * v) * Cd * A)) * radius / final gear ratio
 
 const Home: NextPage = () => {
-
   interface table {
     rpm : number[],
     torque : number[],
@@ -17,25 +17,19 @@ const Home: NextPage = () => {
   }
 
   interface config {
-    mass : number,
-    gearRatio : number,
-    finalDrive : number,
-    finalGearRatio : number,
-    airDensity : number,
-    wheelRadius : number,
-    frontalArea : number,
-    dragCoefficient : number,
-    smoothing : number,
+    [key: string]: number;
   }
 
   let done = false;
-  const [dyno, setDyno] = useState<table>({
+  const [data, setData] = useState<any[]>([]);
+  
+  let dyno : table = {
     rpm : [],
     torque : [],
     horsepower : []
-  });
+  };
 
-  const [config, setConfig] = useState({
+  let config : config= {
     mass : 1391,
     gearRatio : 1.308,
     finalDrive : 3.692,
@@ -45,6 +39,27 @@ const Home: NextPage = () => {
     frontalArea : 1.82,
     dragCoefficient : 0.34,
     smoothing : 10,
+  };
+
+  const [chart, setChart] = useState({
+    options: {
+      chart: {
+        id: "basic-bar"
+      },
+      xaxis: {
+        categories: [-1]
+      }
+    },
+    series: [
+      {
+        name: "Torque",
+        data: dyno.torque
+      },
+      {
+        name: "Horsepower",
+        data: dyno.horsepower
+      }
+    ]
   });
 
   if(config.gearRatio && config.finalDrive) {
@@ -73,18 +88,19 @@ const Home: NextPage = () => {
     }
   }
 
-  function populate(data: any[]) {
-    console.log(data);
-    for (let i = 0; i < data.length; i += config.smoothing) {
+  function populate(array: any[]) {
+    setData(array)
+    
+    for (let i = 0; i < array.length; i += config.smoothing) {
       if(!done) {
-        let prev = data[i - config.smoothing];
-        let current = data[i];
-        let next = data[i + config.smoothing];
+        let prev = array[i - config.smoothing];
+        let current = array[i];
+        let next = array[i + config.smoothing];
         
         if(i < config.smoothing) {
           prev = current;
         }
-        else if(i >= data.length - config.smoothing - 1) {
+        else if(i >= array.length - config.smoothing - 1) {
           next = current;
         }
         else if (next.rpm < current.rpm) {
@@ -96,10 +112,25 @@ const Home: NextPage = () => {
       else break;
     }
 
-    setDyno({
-      torque : dyno.torque,
-      rpm : dyno.rpm,
-      horsepower : dyno.horsepower
+    setChart({
+      options: {
+        chart: {
+          id: "basic-bar"
+        },
+        xaxis: {
+          categories: dyno.rpm
+        }
+      },
+      series: [
+        {
+          name: "Torque",
+          data: dyno.torque
+        },
+        {
+          name: "Horsepower",
+          data: dyno.horsepower
+        }
+      ]
     });
     
   }
@@ -111,36 +142,33 @@ const Home: NextPage = () => {
     transformHeader: (header: string) => header.toLowerCase().replace(/\W/g, "_")
   };
 
-  const chartConfig = {
-    options: {
-      chart: {
-        id: "basic-bar"
-      },
-      xaxis: {
-        categories: dyno.rpm
-      }
-    },
-    series: [
-      {
-        name: "Torque",
-        data: dyno.torque
-      },
-      {
-        name: "Horsepower",
-        data: dyno.horsepower
-      }
-    ]
-  }
+  function updateConfig(id: string, value: number) {
+    config[id] = value;
+    
+    if(data.length > 0) {
+      populate(data);
+    }
+  };
 
   return (
     <div className={styles.container}>
       <Head>
         <title>Virtual Dyno</title>
       </Head>
-      {dyno.torque.length > 0 &&
+      {Object.entries(config).map((item) => {
+        const id = item[0];
+        const value = item[1].toString();
+        return(
+          <label key={id}>
+            {id}
+            <input id={id} placeholder={value} onChange={(e) => parseInt(e.target.value) > 0 ? updateConfig(e.target.id, parseInt(e.target.value)) : null}/>
+          </label>
+        )
+      })}
+      {chart.options.xaxis.categories[0] !== -1 &&
         <Chart
-          options={chartConfig.options}
-          series={chartConfig.series}
+          options={chart.options}
+          series={chart.series}
           type="line"
           width="1000"
         />
@@ -148,7 +176,7 @@ const Home: NextPage = () => {
       <CSVReader 
         onFileLoaded={(data) => populate(data)}
         parserOptions={papaparseOptions}
-        />
+      />
       
     </div>
   )
